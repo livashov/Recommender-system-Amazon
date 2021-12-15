@@ -1,5 +1,11 @@
+Amazon Fine Food recommender systems using R and Python![image](https://user-images.githubusercontent.com/60358611/146242937-7e8b3ca2-3f99-44f5-a3b5-7f4ca19a0c31.png)
+
+
+
 In this project, we use a basic collaborative recommendation system only, or more specifically:
+
 •	User-based collaborative filtering (UBCF model): it is based on finding similar users and find the items those users have liked but we haven’t tried yet.
+
 •	Item-based collaborative filtering (IBCF model): in this case, we will find similar products to the one the user has bought, and we will recommend those products that are like those which has ratted as best.
 
 For modeling this project has been used R package “Recommender Lab” and Python’s Natural Language Toolkit (NLTK). The main goal of the recommendation system – recommend top 3 products from Amazon that a person can potentially buy next.
