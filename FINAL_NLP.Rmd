@@ -1,0 +1,259 @@
+---
+title: "Final_project_NLP"
+author: "Liubov Ivashov"
+date: "12/4/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+1. Pre-processing 
+
+```{r Part1}
+#Upload libraries
+
+library(recommenderlab)
+library(magrittr) 
+library(dplyr)
+library(tidytext)
+library(widyr)
+library(irlba)
+library(Matrix)
+library(ggplot2)
+library(textclean)
+library(tm)
+library(NLP)
+library(plyr)
+library(textstem)
+library(text2vec)
+library(sentimentr) 
+library(textdata)
+library(neuralnet)
+library(lattice)
+library(RColorBrewer)
+library(wordcloud)
+
+
+set.seed(1)
+
+### 1. Preparing the data to build a recommendation engine
+data <- read.csv("/Users/liubovivashov/Desktop/USF/5_Fall2021/ECON630_NLP/Final_project/data/Reviews.csv")
+data$Text[1:10]
+head(data)
+#Exploring data nature
+dim(data)
+str(data)
+
+# get product counts
+count <- ungroup(data) %>% 
+  group_by(ProductId) %>% 
+  dplyr::summarize(Count=n()) %>% 
+  arrange(desc(Count))
+
+# get mean score for each product
+mean_score <- ungroup(data) %>% 
+  group_by(ProductId) %>% 
+  dplyr::summarize(Mean_score = mean(Score)) %>% 
+  arrange(desc(Mean_score))
+
+# merge counts and mean into data frame
+data <- merge(data, count, by.x='ProductId', by.y='ProductId', all.x=T)
+data <- merge(data, mean_score, by.x='ProductId', by.y='ProductId', all.x=T)
+
+# drop unneeded columns
+data2 <- data[, c(1:4,7,9:12)]
+
+# delete rid of stray characters
+data2$UserId <- gsub('#oc-', '', data2$UserId)
+# trim white space
+data2[, c(1:6)] <- lapply(data2[, c(1:6)], trimws)
+# make Score numeric
+data2$Score <- as.numeric(data2$Score)
+
+# create a new data set with a column that groups by product and combines the Summary reviews; this df is used for semantic analysis later
+data3 <- ungroup(data2) %>%
+  group_by(ProductId) %>% 
+  mutate(combine_summary = paste0(Summary, collapse = ' '))
+
+# check lengths
+length(unique(data3$combine_summary))
+length(unique(data3$ProductId))
+
+## for recommenderlab, the data must be imported in a particular format
+## the following steps create 'datRlab' in the right format 
+
+# drop products with fewer than median count
+medianProds <- median(data2$Count)
+datRlab <- ungroup(data3) %>%
+  filter(Count >= medianProds)
+
+# remove columns that we dont need - > using only UserID, ProductId, Score
+datRlab <- datRlab[, c(3,1,5)]
+# remove duplicates
+datRlab <- datRlab[!duplicated(datRlab[,c(1,2)]),]
+
+## datRlab is now in the format needed for recommenderlab
+print(head(datRlab))
+
+
+```
+
+2. Recommenderlab modeling
+
+The recommenderlab package allows us to use and evaluate recommender systems. But in order to utilize the data, the data must be first converted into a matrix format. Below, the datRlab matrix prepared earlier is converted into a recommenderlab format called a realRatingMatrix.
+We will build a recommender system for the product detail page to recommend items to users based on their rating history. We will evaluate Eight different models to get ourselves the best working recommender system.
+
+```{r Part2}
+library(reshape2)
+g <- acast(datRlab, UserId~ ProductId)
+R <- as.matrix(g)
+r <- as(R, "realRatingMatrix")
+r
+
+#Data Preparation
+#When we looked at the data, we noticed that the table contains: Foods that have been reviewed/tried/eaten only a few times. There may be bias in this data from lack of data and/or biased reviewers.We need to determine the number of users per food. We must prepare the data, build a recommendation model, and validate it. Since this is our first time building this model, we can use a rule of thumb. After we have built the model, we can come back and modify the data preparation.
+
+#We will use users who have rated at least 30 foods, and foods that have been reviewed at least 100 times.
+
+
+r[rowCounts(r) > 30, colCounts(r) > 100]
+ratings_foods  <- r[rowCounts(r)>30, colCounts(r)>100]
+ratings_foods1 <- ratings_foods[rowCounts(ratings_foods) > 10,]
+ratings_foods1 <- ratings_foods
+ratings_foods1
+
+
+#Now the data is prepared and ready for use for the recommender system development.
+
+
+```
+
+3. Item-based collaborative filtering
+
+```{r Part3}
+# We randomly define the which_train vector that is True for users in the training set and FALSE for the others.
+# Will set the probability in the training set as 80%
+which_train <- sample(x = c(TRUE, FALSE), size = nrow(ratings_foods1), replace = TRUE, prob = c(0.8, 0.2))
+
+# Define the training and the test sets
+recc_data_train <- ratings_foods1[which_train, ]
+recc_data_test <- ratings_foods1[!which_train, ]
+
+# Let's build the recommender IBCF - cosine:
+recc_model <- Recommender(data = recc_data_train, method = "IBCF", parameter = list(k = 30)) 
+
+# We have now created a IBCF Recommender Model
+
+# We will define n_recommended that defines the number of items to recommend to each user and with the predict function, create prediction(recommendations) for the test set.
+n_recommended <- 6
+recc_predicted <- predict(object = recc_model, newdata = recc_data_test, n = n_recommended)
+
+# This is the recommendation for the first user
+recc_predicted@items[[1]]
+# Now let's define a list with the recommendations for each user
+recc_matrix <- lapply(recc_predicted@items, function(x){
+  colnames(ratings_foods)[x]
+})
+
+# Let's take a look the recommendations for the first four users:
+recc_matrix[1:4]
+```
+
+4. User-based collaborative filtering
+
+```{r Part4}
+#The method computes the similarity between users with cosine
+
+# Let's build a recommender model leaving the parameters to their defaults. 
+recc_model <- Recommender(data = recc_data_train, method = "UBCF")
+
+# A UBCF recommender has now been created
+recc_predicted <- predict(object = recc_model, newdata = recc_data_test, n = n_recommended)
+
+# Let's define a list with the recommendations to the test set users.
+recc_matrix <- sapply(recc_predicted@items, function(x) {
+  colnames(ratings_foods)[x]
+})
+
+# Again, let's look at the first four users
+recc_matrix[1:4]
+```
+
+5. Evaluating the Recommender Systems
+```{r Part5}
+#K-fold Cross Validation
+n_fold <- 4
+
+e_N <- evaluationScheme(ratings_foods1, method="cross-validation", k=n_fold, given=10, goodRating=4)
+
+models_to_evaluate <- list(
+    IBCF_Cosine = list(name = "IBCF", param = list(method = "Cosine")), 
+    IBCF_Pearson = list(name = "IBCF", param = list(method = "Pearson")), 
+    IBCF_Euclidean = list(name = "IBCF", param = list(method = "Euclidean")),
+  
+    
+    Random  = list(name = "Random" ), 
+    Popular = list(name = "Popular"),
+    
+    
+    SVD = list(name = "SVD"),
+    ALS = list(name = "ALS")
+)
+
+n_recommendations <- c(1,3,5,10,20)
+
+results_N <- evaluate(x = e_N, method = models_to_evaluate, n =n_recommendations)
+
+plot(results_N, annotate = 1, legend = "topleft")
+title("ROC curve")
+
+#We can see that SVD, that uses the matrix factorization technique, outperforms all the other models.
+
+#IBCF_Pearson is close to SVD with a low number of item suggestions i.e. up to three suggestions. But as the number of suggestions increases, SVD turns to be the absolute winner.
+
+
+plot(results_N, "prec/rec", annotate = 1, legend = "topleft")
+title("Precision-recall")
+
+#SVG has the highest precision for three items suggestions of all the models. Hence, this is the model we should likely use when we choose with recommender system we would like to use.
+
+avg_matrices_N <- lapply(results_N, avg)
+head(avg_matrices_N$IBCF_C)
+
+head(avg_matrices_N$SVD)
+```
+
+6. Hybrid Recommender
+
+Even though SVD was our best model, IBCF with Pearson similarly also had better performance and can beat the SVD if had to suggest more number of products.
+
+To further improve our recommender model we can combine both the models to train a hybrid system that can derive the power of both.
+```{r Part6}
+
+models_to_evaluate_H <- list(
+    IBCF_Pearson = list(name = "IBCF", param = list(method = "Pearson")), 
+    
+    SVD = list(name = "SVD")
+)
+n_recommendations <- c(1,3,5,10,20)
+
+#Since SVD performs better we will give more weightage to it than IBCF.
+results_H <- evaluate(x = e_N, method = 'HYBRID', n =n_recommendations,
+                      parameter = list(recommenders = models_to_evaluate_H, weights = c(1,1)))
+
+plot(results_H)
+title("ROC Curve")
+
+plot(results_H, "prec/rec")
+title("Precision-recall")
+
+avg(results_H)
+```
+
+7. Word2Vec embedding recommender system
+```{r Part7}
+
+```
