@@ -17,7 +17,7 @@ For modeling this project has been used R package “Recommender Lab” and Pyth
 •	Reviews include product and user information, ratings, and a plain text review. It also includes reviews from all other Amazon categories.
 •	Link to the Dataset: https://www.kaggle.com/snap/amazon-fine-food-reviews
 
-**Key metric**: precision - 80%. 
+**Key metric**: precision - 80%. Precision is the number of selected items that are relevant.
 
 In this project we used simple recommender systems that don’t use the whole potential of the text data that we have - mostly rely on reviews’ score or reviews’ summary. Even though these models showed pretty good results they are far from perfect recommendation system: work good with people who is actively reviewing and scoring products. These models predict good for no more than 5 items (used for prediction of top 3 items). Surprisingly, Amazon still uses this collaborative filtering recommendation model, even though they test deep learning models constantly.
 
